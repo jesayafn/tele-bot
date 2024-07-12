@@ -1,4 +1,4 @@
-import logging, os, secrets, pymongo, requests, random, re
+import secrets, pymongo, requests, random, re
 
 from datetime import datetime
 
@@ -8,70 +8,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 import google.generativeai as genai
 
 
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
 
+import config
 
-
-# Enable logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
-
-# telegram
-token = os.getenv("BOT_TOKEN")
-
-# mongodb
-mongodb = os.getenv("MONGODB_URI")
-clientMongo = MongoClient(mongodb, server_api=ServerApi('1'))
-db = clientMongo['testing']
-collection = db['sessions']
-
-#external api
-bible_api_key = os.getenv('BIBLE_API_KEY')
-openweather_api_key = os.getenv('OPENWEATHER_API_KEY')
-
-#===========================================================================================#
-
-VERSES = [
-  'JER.29.11',
-  '1CO.4.4-8',
-  'PHP.4.13',
-  'JHN.3.16',
-  'ROM.8.28',
-  'ISA.41.10',
-  'PSA.46.1',
-  'GAL.5.22-23',
-  'HEB.11.1',
-  '2TI.1.7',
-  '1CO.10.13',
-  'PRO.22.6',
-  'ISA.40.31',
-  'JOS.1.9',
-  'HEB.12.2',
-  'MAT.11.28',
-  'ROM.10.9-10',
-  'ROM.8.28',
-  'PHP.2.3-4',
-  'MAT.5.43-44',
-]
-
-
-bible_params = {
-    "content-type": "text",
-    "include-notes": "false",
-    "include-titles": "false",
-    "include-chapter-numbers": "false",
-    "include-verse-numbers": "true",
-    "include-verse-spans": "false",
-    "use-org-id": "false"
-}
-
-
-#===========================================================================================#
+collection = config.db()
 
 #===========================================================================================#
 class ArrayWithPartsAndRoles:
@@ -150,97 +90,71 @@ def divide(a: float, b: float):
     return a / b
 
 def joke():
-    """Fetches a dad joke from the API and returns it."""
+    """Fetches a dad joke from the API and returns it.
+    
+    Return value:
+    
+    joke = Joke fetched from the dad joke API in form of plain text
+    """
     headers = {'Accept': 'text/plain',}
     url = f"https://icanhazdadjoke.com/"
     api_response = requests.get(url,headers=headers)
-    return api_response.text
+    joke=api_response.text
+    return joke
 
 
 def bible_verse():
-    """Fetches a random and selected verse from the bible API and returns it."""
-    selected_verses = random.choice(VERSES)
+    """Fetches a random and selected verse from the bible API and returns it.
+    
+    Return value:
+    
+    reference = Reference of fetched verse(s) 
+    verses_content = Contone of fetched verse(s)
+    bible_version = Tranlation version of fetched verse(s)
+    """
+    selected_verses = random.choice(config.VERSES)
     array_selected_verse = parse_bible_references(selected_verses)
     
     headers = {
         'Accept': 'application/json',
-        'api-key': bible_api_key,
+        'api-key': config.bible_api_key,
         }
     
     reference = ""
-    combined_text = ""
+    verses_content = ""
 
     for i, verse in enumerate(array_selected_verse):
         api_url = "https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/verses/" + verse
-        response = requests.get(api_url, params=bible_params, headers=headers)
+        response = requests.get(api_url, params=config.bible_params, headers=headers)
         if response.status_code == 200:
             data = response.json()['data']
             if i == 0:
-                book, chapter, first_verse = re.match(r'([A-Z]+)\.(\d+)\.(\d+)', verse).groups()
-                reference = f"{book.capitalize()} {chapter}:{first_verse}"
-    
-                combined_text += data['content'].strip()
+                reference = data['reference']
+                verses_content += data['content'].strip()
             else:
                 reference = increment_bible_reference(reference)
-                combined_text += f"[{data['verseCount']}] {data['content'].strip()}"
-        else:
-            return None
+                verses_content += f"[{data['verseCount']}] {data['content'].strip()}"
+
     # Removing unnecessary verse count indicators like [1] but keeping verse numbers like [11]
-    combined_text = re.sub(r'\[(\d+)\]', lambda m: m.group(1) if int(m.group(1)) > 1 else '', combined_text).strip()
+    verses_content = re.sub(r'\[(\d+)\]', lambda m: m.group(1) if int(m.group(1)) > 1 else '', verses_content).strip()
 
     bible_version = "KJV"
     # print(f"{reference} {combined_text} {bible_version}")
-    return reference, combined_text, bible_version
+    return reference, verses_content, bible_version
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # for verse in array_selected_verses:
-    #     api_url =  "https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/verses/" + verse
-    #     response = requests.get(api_url, params=bible_params, headers=headers)
-    #     print(api_url)
-    #     if response.status_code == 200:
-    #         data = response.json()['data']
-    #         if not reference:
-    #             book, chapter, verse_num = re.match(r'([A-Z]+)\.(\d+)\.(\d+)', verse).groups()
-    #             reference = f"{book.capitalize()} {chapter}:{verse_num}"
-    #         text = data['content'].strip()
-    #         combined_text += text + " "
-    #     else:
-    #         return None
-    
-    # combined_text = combined_text.strip()
-    # bible_version = "KJV"
-    # print(reference, combined_text, bible_version)
-    # return reference, combined_text, bible_version
-    # api_url =  "https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/verses/"+selected_verse
-    # response = requests.get(api_url,params=bible_params,headers=headers)
-    # if response.status_code == 200:
-    #     data = response.json()['data']
-    #     reference = data['reference']
-    #     text = data['content'].strip()
-    #     bible_version = "KJV"
-    #     print(reference, text, bible_version)
-    # else:
-    #     return None
 
 def city_coordinates(city: str):
-    """Fetch city coordinates for get weather information or just get coordinate of city."""
+    """Fetch city coordinates for get weather information or just get coordinate of city.
+    
+    Return value:
+    
+    latitude = Latitude of city
+    longitude = Longtitude of city
+    """
     params = {
         "q"   : city,
         "limit": 1,
-        "appid": openweather_api_key,
+        "appid": config.openweather_api_key,
     }
     
     api_url = "http://api.openweathermap.org/geo/1.0/direct"
@@ -253,16 +167,23 @@ def city_coordinates(city: str):
     else:
         return None
     
+    
 def city_weather(lat: float, lon: float):
     """Fetch weather information based on coordinates. 
-    Units will be used is metric, celcius for temperature and meter per second for speed.
-    Milimeter will be used for rain and snow measurements."""
+    
+    Return value:
+    
+    weather = Current weather on coordinate
+    temperature.current = Current real temperature on coordinate
+    temperature.feels_like = Current feels like temperature on coordinate
+    wind_speed = Current wind speed on coordinate
+    """
     api_url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
         "lat": lat,
         "lon": lon,
         "units": "metric",
-        "appid": openweather_api_key,
+        "appid": config.openweather_api_key,
     }
     response = requests.get(api_url, params=params)
     
@@ -336,7 +257,7 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_history = None
     if session_status == 0 or session_status == 2:
         session_id = generate_and_store_session_id(user_id)
-        add_session_id(session_id, user_id, False)
+        # add_session_id(session_id, user_id, False)
         
         chat = model.start_chat(enable_automatic_function_calling=True)
         model_response = chat.send_message(user_message)
@@ -364,7 +285,6 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     chat_history_serializable = [{'parts': part, 'role': role} for part, role in zip(chat_history.parts, chat_history.roles)]
     collection.update_one({'session_id': session_id}, {'$push': {'chat_history': {'$each': chat_history_serializable}}}, upsert=True)
-
         
 
     await update.message.reply_text(model_response.text)
@@ -377,6 +297,7 @@ def generate_and_store_session_id(telegram_user_id: int) -> str:
     session_data = {
         'user_id': telegram_user_id,
         'session_id': session_id,
+        'created_at': datetime.now(),
         'reset': False  # Assuming session starts as active
     }
     result = collection.insert_one(session_data)
@@ -386,18 +307,43 @@ def generate_and_store_session_id(telegram_user_id: int) -> str:
     else:
         return None  # Insertion failed
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def add_session_id(session_id: str, user_id: int, reset: bool):
     document = {
         'session_id': session_id,
         'user_id': user_id,
-        'reset': reset
+        'reset': reset,
+        'created_at': datetime.now()
     }
     
     collection.insert_one(document)
 
 def reset_session(user_id: int, session: str) -> bool:
     query = {'user_id': user_id, 'session_id': session}
-    update = {'$set': {'reset': True}}
+    update = {'$set': {
+        'reset_at': datetime.now(),
+        'reset': True,
+        }
+    }
     
     result = collection.update_one(query, update)
     
@@ -408,7 +354,7 @@ def reset_session(user_id: int, session: str) -> bool:
    
 def check_session(user_id: int) -> int:
     query = {'user_id': user_id}
-    existing_document = collection.find_one(query, sort=[('_id', pymongo.DESCENDING)])
+    existing_document = collection.find_one(query, sort=[('created_at', pymongo.DESCENDING)])
     
     if existing_document:
         # Document exists
@@ -425,7 +371,7 @@ def check_session(user_id: int) -> int:
 
 def get_session(user_id: int) -> str :
     query = {'user_id': user_id, 'reset': False}
-    existing_document = collection.find_one(query, sort=[('_id', pymongo.DESCENDING)])
+    existing_document = collection.find_one(query, sort=[('created_at', pymongo.DESCENDING)])
     
     return existing_document.get('session_id', '')
     
@@ -433,7 +379,7 @@ def get_session(user_id: int) -> str :
 
 def main() -> None:
     """Start the bot."""
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(config.token).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler(["reset", "stop"], reset))
